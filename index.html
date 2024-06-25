@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Argentinian Corporate Bonds</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid black;
+        }
+
+        th,
+        td {
+            padding: 8px;
+            text-align: left;
+        }
+
+        .calculator,
+        .details {
+            margin-top: 20px;
+        }
+
+        img {
+            width: 50px;
+            height: 50px;
+        }
+
+        .chart-container {
+            width: 100%;
+            height: 400px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Argentinian Corporate Bonds</h1>
+    <table id="bondsTable">
+        <thead>
+            <tr>
+                <th>Logo</th>
+                <th>Short Ticker</th>
+                <th>Instrument Name</th>
+                <th>Currency</th>
+                <th>Expiration Date</th>
+                <th>Term</th>
+                <th>TIR</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <div class="calculator">
+        <h2>Investment Simulator</h2>
+        <label for="investment">Investment Amount:</label>
+        <input type="number" id="investment" name="investment" value="1000">
+        <button onclick="simulateInvestment()">Simulate</button>
+        <p id="investmentResult"></p>
+    </div>
+
+    <div class="details">
+        <h2>Bond Details</h2>
+        <label for="bondSelect">Select Bond:</label>
+        <select id="bondSelect" onchange="showBondDetails()">
+            <option value="">--Select a Bond--</option>
+        </select>
+        <div class="chart-container">
+            <canvas id="paymentChart"></canvas>
+        </div>
+        <table id="paymentTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Amortization</th>
+                    <th>Interest</th>
+                    <th>Capital</th>
+                    <th>Cash Flow</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        const apiUrl = 'https://api.cocos.capital/api/v1/markets/tickers?instrument_type=BONOS_CORP&instrument_subtype=TOP&settlement_days=24hs&currency=USD&segment=C&size=50&page=';
+        const apiToken = 'Bearer ADD_YOUR_API_TOKEN';
+
+        let allBondsData = [];
+
+        async function fetchBondsData(page = 1) {
+            const response = await fetch(`${apiUrl}${page}`, {
+                headers: {
+                    'Authorization': apiToken,
+                    'X-Account-Id': '78250'
+                }
+            });
+            const data = await response.json();
+            allBondsData = allBondsData.concat(data.items);
+            if (page < data.total_pages) {
+                await fetchBondsData(page + 1);
+            } else {
+                await processAndDisplayData(allBondsData);
+            }
+        }
+
+        async function fetchTIR(bond) {
+            const tirApiUrl = 'https://api.cocos.capital/api/v1/calculator/analisis';
+            const payload = {
+                bond: bond.instrument_code,
+                price: bond.last,
+                expiration_date: bond.maturity,
+                quantity: 100,
+                logo: bond.logo_file_name || ''
+            };
+            const response = await fetch(tirApiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': apiToken,
+                    'X-Account-Id': '78250',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Language': 'es-US,es;q=0.9,en-US;q=0.8,en;q=0.7,es-419;q=0.6',
+                    'Origin': 'https://app.cocos.capital',
+                    'Referer': 'https://app.cocos.capital/',
+                    'Sec-Ch-Ua': '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+                    'Sec-Ch-Ua-Mobile': '?1',
+                    'Sec-Ch-Ua-Platform': '"Android"',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'same-site',
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
+                },
+                body: JSON.stringify(payload)
+            });
+            if (response.status === 401) {
+                alert('Unauthorized access. Please check your API token.');
+                return;
+            }
+            const tirData = await response.json();
+            return tirData.tir;
+        }
+
+        async function processAndDisplayData(data) {
+            for (const bond of data) {
+                bond.tir = await fetchTIR(bond);
+            }
+            renderTable(data);
+            populateBondSelect(data);
+        }
+
+        function renderTable(data) {
+            const tbody = document.querySelector('#bondsTable tbody');
+            tbody.innerHTML = '';
+            data.forEach(bond => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><img src="https://assets.cocos.capital/cocos/logos/${bond.logo_file_name || 'default_logo.png'}" alt="${bond.instrument_name}"></td>
+                    <td>${bond.short_ticker}</td>
+                    <td>${bond.instrument_name}</td>
+                    <td>${bond.currency}</td>
+                    <td>${bond.maturity}</td>
+                    <td>${bond.term}</td>
+                    <td>${bond.tir ? bond.tir + '%' : 'N/A'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function populateBondSelect(data) {
+            const select = document.getElementById('bondSelect');
+            data.forEach(bond => {
+                const option = document.createElement('option');
+                option.value = bond.instrument_code;
+                option.text = bond.instrument_name;
+                select.add(option);
+            });
+        }
+
+        async function showBondDetails() {
+            const bondCode = document.getElementById('bondSelect').value;
+            const bond = allBondsData.find(b => b.instrument_code === bondCode);
+            if (!bond) return;
+
+            const tirData = await fetchTIR(bond);
+            renderPaymentTable(tirData.flow, bond.price);
+            renderPaymentChart(tirData.flow);
+        }
+
+        function renderPaymentTable(flow, price) {
+            const tbody = document.querySelector('#paymentTable tbody');
+            tbody.innerHTML = '';
+            flow.forEach(payment => {
+                const investmentAmount = parseFloat(document.getElementById('investment').value);
+                const cashFlow = payment.cashFlow * (investmentAmount / price);
+                const row = document.createElement('tr');
+                row.innerHTML = `
+            <td>${payment.date}</td>
+            <td>${payment.amort}</td>
+            <td>${payment.interes || 0}</td>
+            <td>${payment.capital}</td>
+            <td>${cashFlow.toFixed(2)}</td>
+        `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function renderPaymentChart(flow) {
+            const ctx = document.getElementById('paymentChart').getContext('2d');
+            const labels = flow.map(payment => payment.date);
+            const cashFlows = flow.map(payment => payment.cashFlow);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Cash Flow',
+                        data: cashFlows,
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function simulateInvestment() {
+            const investment = parseFloat(document.getElementById('investment').value);
+            const results = allBondsData.map(bond => {
+                const tir = parseFloat(bond.tir);
+                return {
+                    name: bond.instrument_name,
+                    value: (investment * (1 + tir / 100)).toFixed(2)
+                };
+            });
+            const resultString = results.map(result => `${result.name}: $${result.value}`).join('<br>');
+            document.getElementById('investmentResult').innerHTML = resultString;
+        }
+
+        async function init() {
+            await fetchBondsData();
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
